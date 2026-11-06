@@ -14,6 +14,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nike_flutter/app.dart';
 import 'package:nike_flutter/features/shop/application/preferences_provider.dart';
+import 'package:nike_flutter/features/shop/application/receipt_pdf.dart';
+import 'package:nike_flutter/features/shop/domain/models/cart_item.dart';
+import 'package:nike_flutter/features/shop/domain/models/order.dart';
 import 'package:nike_flutter/features/shop/data/shoes_data.dart';
 import 'package:nike_flutter/features/shop/presentation/widgets/variant_selectors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,12 +32,18 @@ String get _out => Platform.environment['MEDIA_OUT'] ?? 'build/readme_media';
 /// The test binding renders text with a blocky test font by default; load the
 /// real Roboto that ships with the Flutter SDK so the output looks like the app.
 Future<void> _loadRoboto() async {
-  final root = Platform.environment['FLUTTER_ROOT'] ??
+  final root =
+      Platform.environment['FLUTTER_ROOT'] ??
       File(Platform.resolvedExecutable).parent.parent.parent.parent.path;
   final dir = '$root/bin/cache/artifacts/material_fonts';
   final loader = FontLoader('Roboto');
   for (final name in [
-    'Regular', 'Medium', 'Bold', 'Black', 'Italic', 'Light',
+    'Regular',
+    'Medium',
+    'Bold',
+    'Black',
+    'Italic',
+    'Light',
   ]) {
     final bytes = File('$dir/Roboto-$name.ttf').readAsBytesSync();
     loader.addFont(Future.value(ByteData.sublistView(bytes)));
@@ -44,7 +53,9 @@ Future<void> _loadRoboto() async {
   final icons = FontLoader('MaterialIcons')
     ..addFont(
       Future.value(
-        ByteData.sublistView(File('$dir/MaterialIcons-Regular.otf').readAsBytesSync()),
+        ByteData.sublistView(
+          File('$dir/MaterialIcons-Regular.otf').readAsBytesSync(),
+        ),
       ),
     );
   await icons.load();
@@ -53,7 +64,8 @@ Future<void> _loadRoboto() async {
 Future<void> _grab(WidgetTester tester, String path) async {
   await tester.runAsync(() async {
     final boundary =
-        _boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        _boundaryKey.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
     final image = await boundary.toImage(pixelRatio: _pixelRatio);
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     File(path)
@@ -79,7 +91,12 @@ Future<void> _record(WidgetTester tester, String clip, int ms) async {
   }
 }
 
-Future<void> _swipe(WidgetTester tester, String clip, Offset from, double dx) async {
+Future<void> _swipe(
+  WidgetTester tester,
+  String clip,
+  Offset from,
+  double dx,
+) async {
   final gesture = await tester.startGesture(from);
   for (var i = 0; i < 6; i++) {
     await gesture.moveBy(Offset(dx / 6, 0));
@@ -166,7 +183,12 @@ void main() {
     await _record(tester, 'detail', 400);
 
     // Tap the card: spin, Hero + route transition.
-    await _tapAndRecord(tester, 'detail', find.byKey(const ValueKey('1')), 1700);
+    await _tapAndRecord(
+      tester,
+      'detail',
+      find.byKey(const ValueKey('1')),
+      1700,
+    );
     await _record(tester, 'detail', 600);
 
     // Adding without a size shows the validation message.
@@ -232,10 +254,20 @@ void main() {
     await _pumpApp(tester);
     await _record(tester, 'favorites', 500);
 
-    await _tapAndRecord(tester, 'favorites', find.byIcon(Icons.favorite_border), 900);
+    await _tapAndRecord(
+      tester,
+      'favorites',
+      find.byIcon(Icons.favorite_border),
+      900,
+    );
     await tester.drag(find.byType(PageView), const Offset(-320, 0));
     await _record(tester, 'favorites', 1000);
-    await _tapAndRecord(tester, 'favorites', find.byIcon(Icons.favorite_border), 900);
+    await _tapAndRecord(
+      tester,
+      'favorites',
+      find.byIcon(Icons.favorite_border),
+      900,
+    );
     await _record(tester, 'favorites', 300);
 
     await _tapAndRecord(tester, 'favorites', find.text('Favorites').last, 900);
@@ -254,17 +286,33 @@ void main() {
     );
     await _record(tester, 'checkout', 500);
 
-    await _tapAndRecord(tester, 'checkout', find.byIcon(Icons.shopping_bag_outlined), 900);
+    await _tapAndRecord(
+      tester,
+      'checkout',
+      find.byIcon(Icons.shopping_bag_outlined),
+      900,
+    );
     await _still(tester, 'cart');
-    await _tapAndRecord(tester, 'checkout', find.byIcon(Icons.add_circle_outline), 500);
+    await _tapAndRecord(
+      tester,
+      'checkout',
+      find.byIcon(Icons.add_circle_outline),
+      500,
+    );
     await _record(tester, 'checkout', 400);
 
     await _tapAndRecord(tester, 'checkout', find.text('Checkout'), 1300);
     await _tapAndRecord(tester, 'checkout', find.text('Apple Pay'), 700);
     await _still(tester, 'checkout');
-    await _tapAndRecord(tester, 'checkout', find.text('Checkout Now'), 2400);
+    // The button turns into "Processing...", then the confirmation appears.
+    await tester.tap(find.text('Checkout Now'));
+    await _record(tester, 'checkout', 700);
+    await _still(tester, 'processing');
+    await _record(tester, 'checkout', 2800);
+    await _still(tester, 'confirmation_confetti');
+    await _record(tester, 'checkout', 1700);
     await _still(tester, 'confirmation');
-    await _record(tester, 'checkout', 500);
+    await _record(tester, 'checkout', 600);
 
     await _tapAndRecord(tester, 'checkout', find.text('View My Orders'), 1000);
     await _still(tester, 'orders_new');
@@ -273,7 +321,13 @@ void main() {
 
   testWidgets('orders with every status', (tester) async {
     final now = DateTime.now();
-    String order(String id, Duration age, String shoeId, int size, String color) =>
+    String order(
+      String id,
+      Duration age,
+      String shoeId,
+      int size,
+      String color,
+    ) =>
         '{"id":"$id","paymentMethod":"Apple Pay","placedAt":"'
         '${now.subtract(age).toIso8601String()}","items":[{"shoeId":"$shoeId",'
         '"size":$size,"colorway":"$color","quantity":1}]}';
@@ -290,5 +344,22 @@ void main() {
     await tester.tap(find.text('Orders').last);
     await tester.pump(const Duration(milliseconds: 900));
     await _still(tester, 'orders');
+  });
+
+  testWidgets('sample receipt pdf', (tester) async {
+    final order = Order(
+      id: 'NK8F2K1',
+      paymentMethod: 'Apple Pay',
+      placedAt: DateTime.now(),
+      items: [
+        CartItem(shoe: kShoes[0], size: 9, colorway: 'Chicago Red'),
+        CartItem(shoe: kShoes[2], size: 8, colorway: 'Volt', quantity: 2),
+        CartItem(shoe: kShoes[1], size: 10, colorway: 'Sky Blue'),
+      ],
+    );
+    final bytes = await tester.runAsync(() => buildReceiptPdf(order));
+    File('$_out/receipt.pdf')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(bytes!);
   });
 }

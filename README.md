@@ -40,7 +40,8 @@ Swipe through shoes, pick a size and color, save favorites, check out, and track
 | 📏 **Size & color** | US sizes 6–12 with out-of-stock sizes struck through · three colorways per shoe · a size is required before adding |
 | ❤️ **Favorites** | Heart any shoe from the card or detail page · dedicated Favorites tab |
 | 🛒 **Cart** | Per-line size and color · quantity controls · live total · the same shoe in another size is its own line |
-| ✅ **Checkout & orders** | Payment choice · animated confirmation · Orders tab with a Placed → Shipped → Delivered tracker |
+| ✅ **Checkout & orders** | Animated checkout with a processing state · confetti confirmation · Orders tab with a Placed → Shipped → Delivered tracker |
+| 🧾 **PDF receipt** | Print or save a receipt (with each shoe's photo, size, color and totals) from the confirmation screen or any order |
 | 💾 **Persistence** | Cart, favorites and orders survive an app restart; corrupt or outdated saved data is ignored instead of crashing |
 
 > **Demo behavior worth knowing**
@@ -117,9 +118,11 @@ Everything is built with Flutter's own animation widgets and controllers. No ani
     <td valign="top">
 
 ### ✅ Checkout, confirmation & orders
-- **Checkout entry**: the page slides in and the payment rows stagger in one by one (280 ms + 80 ms per row); the summary scales in.
-- **Payment selection**: the chosen row's border and fill animate (220 ms) and the "Selected:" label cross-fades.
-- **Success badge**: a black circle pops in with an elastic bounce, then the checkmark **draws itself** with a `CustomPainter` (1.4 s total).
+- **Staggered entry**: sections slide and fade in one after another; the shoes you're buying pop into the summary.
+- **Counting total**: the total counts up from $0 as the page opens (1.1 s).
+- **Payment cards**: each method has an icon; the selected one turns black, its icon grows and a check bounces in (240 ms).
+- **Processing button**: "Checkout Now" morphs into a spinner with *Processing...* for 1.5 s before the order is placed. Leaving the page during this cancels the order.
+- **Confirmation**: a black badge pops in with an elastic bounce, the checkmark **draws itself** with a `CustomPainter`, **confetti** in your shoes' colors falls over the screen (3.2 s), and the purchased shoes pop in one by one.
 - **Order tracker**: step circles and connecting lines fill as the status advances (400 ms).
 
 `checkout_screen.dart` · `order_confirmation_screen.dart` · `orders_screen.dart`
@@ -179,12 +182,21 @@ On the detail page the background is tinted by the chosen **colorway** (that col
     <td align="center"><img src="docs/media/checkout.png" width="170"><br><sub><b>Checkout</b></sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/media/confirmation.png" width="170"><br><sub><b>Confirmation</b></sub></td>
+    <td align="center"><img src="docs/media/processing.png" width="170"><br><sub><b>Processing</b></sub></td>
+    <td align="center"><img src="docs/media/confirmation_confetti.png" width="170"><br><sub><b>Confetti</b></sub></td>
     <td align="center"><img src="docs/media/orders.png" width="170"><br><sub><b>Orders</b></sub></td>
     <td align="center"><img src="docs/media/favorites.png" width="170"><br><sub><b>Favorites</b></sub></td>
-    <td></td>
   </tr>
 </table>
+
+### 🧾 Receipt
+
+Tap **Print / Save Receipt (PDF)** on the confirmation screen (or **Receipt** on any order in the Orders tab) to open Android's print dialog. From there you can print it or choose *Save as PDF*. The receipt lists every shoe with its photo, size, color, quantity and price, plus the total.
+
+<p align="center">
+  <img src="docs/media/receipt.png" width="420" alt="Sample PDF receipt"><br>
+  <sub><a href="docs/media/sample-receipt.pdf">Open a sample receipt (PDF)</a></sub>
+</p>
 
 ---
 
@@ -213,6 +225,46 @@ With the current Flutter release the Android build needs **Gradle 8.14+**, **And
 
 ---
 
+## 📦 Releases (APK)
+
+A GitHub Actions workflow (`.github/workflows/release.yml`) builds the app and publishes the APK under the repo's **Releases** page.
+
+**To publish a release**, push a version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow runs `flutter analyze` and `flutter test`, builds a release APK, and attaches `nike-shop-v1.0.0.apk` and its `.sha256` checksum to a new Release with auto-generated notes. The tag sets the app's version (`v1.0.0` → `1.0.0`) and the run number sets the build number. Use plain `vMAJOR.MINOR.PATCH` tags.
+
+You can also run it by hand from the **Actions** tab (*Release APK → Run workflow*). That builds the APK and attaches it to the run as a downloadable artifact, without creating a Release.
+
+### Signing (recommended)
+
+Without a keystore, the APK is signed with a temporary debug key that changes on every run. It installs fine, but **a new release cannot update an older install** (Android rejects a different signature). To fix that, create a keystore once and add it as repository secrets:
+
+```bash
+keytool -genkeypair -v -keystore upload-keystore.jks -alias upload \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 upload-keystore.jks     # copy this output (macOS: base64 -i upload-keystore.jks)
+```
+
+Then in your repo go to **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the base64 text from above |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password you chose |
+| `ANDROID_KEY_ALIAS` | `upload` (or the alias you used) |
+| `ANDROID_KEY_PASSWORD` | the key password you chose |
+
+> ⚠️ Keep `upload-keystore.jks` somewhere safe and **never commit it** (it is already git-ignored). If you lose it you can no longer publish updates that install over existing copies.
+
+Local release builds still work without any of this: `android/app/build.gradle.kts` falls back to the debug key when `android/key.properties` is absent.
+
+---
+
 ## 🧱 Project structure
 
 ```
@@ -221,23 +273,25 @@ lib/
   app.dart                   # MaterialApp + theme
   features/shop/
     data/                    # shoes_data.dart (static catalog)
-    domain/models/           # Shoe, CartItem, Order
+    domain/                  # models (Shoe, CartItem, Order) + formatters
     application/             # Riverpod providers (state + persistence)
       cart_provider.dart
       wishlist_provider.dart
       orders_provider.dart
       shop_filter_provider.dart     # search / category / sort
+      receipt_pdf.dart              # builds the PDF receipt
       home_tab_provider.dart
       preferences_provider.dart
     presentation/
       screens/               # home_shell, shop, shoe_detail, cart, checkout,
                              # order_confirmation, favorites, orders
       widgets/               # animated_shoe_card, wishlist_button,
-                             # variant_selectors, quick_add_sheet
+                             # variant_selectors, quick_add_sheet, receipt_actions
 test/
   cart_and_orders_test.dart  # unit tests: cart, wishlist, orders, filtering
   widget_test.dart           # widget tests: search, add to cart, checkout flow, layout
 tool/readme_media/           # regenerates the GIFs and screenshots in docs/media
+.github/workflows/           # release.yml: builds the APK and publishes a Release
 docs/media/                  # README images
 ```
 
@@ -256,7 +310,7 @@ The GIFs and screenshots are rendered by driving the real app headlessly (no dev
 ```bash
 export MEDIA_OUT=/tmp/nike_media
 flutter test tool/readme_media/capture_test.dart
-tool/readme_media/build_media.sh "$MEDIA_OUT"   # needs ffmpeg and ImageMagick
+tool/readme_media/build_media.sh "$MEDIA_OUT"   # needs ffmpeg and ImageMagick (and pdftoppm for the receipt preview)
 ```
 
 ---
@@ -267,3 +321,5 @@ tool/readme_media/build_media.sh "$MEDIA_OUT"   # needs ffmpeg and ImageMagick
 |---|---|
 | `flutter_riverpod` | state management |
 | `shared_preferences` | local persistence |
+| `pdf` | building the receipt PDF |
+| `printing` | print dialog, save and share for the receipt |

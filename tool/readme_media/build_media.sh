@@ -21,7 +21,7 @@ gif() {
 for clip in carousel detail search favorites checkout; do gif "$clip" 270; done
 
 # Stills for the screen gallery.
-for name in shop detail cart checkout confirmation favorites orders; do
+for name in shop detail cart checkout processing confirmation confirmation_confetti favorites orders; do
   magick "$SRC/stills/$name.png" -resize 300x -strip "$DEST/$name.png"
 done
 
@@ -29,5 +29,16 @@ done
 magick montage "$SRC"/stills/shoe_{1,2,3,4,5,6}.png \
   -resize 230x -geometry +10+10 -tile 6x1 -background none \
   -strip "$DEST/themes.png"
+
+# Sample receipt: keep the PDF and a preview image of its first page.
+if [ -f "$SRC/receipt.pdf" ]; then
+  cp "$SRC/receipt.pdf" "$DEST/sample-receipt.pdf"
+  if command -v pdftoppm >/dev/null; then
+    pdftoppm -png -r 70 -f 1 -l 1 -singlefile "$SRC/receipt.pdf" "$DEST/receipt"
+    magick "$DEST/receipt.png" -trim +repage -bordercolor white -border 8 -strip "$DEST/receipt.png"
+  else
+    echo "pdftoppm not found: skipped receipt.png" >&2
+  fi
+fi
 
 ls -la "$DEST"

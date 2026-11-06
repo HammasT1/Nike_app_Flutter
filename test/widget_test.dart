@@ -146,9 +146,14 @@ void main() {
     await tester.tap(find.text('Checkout'));
     await settle(tester);
     await tester.tap(find.text('Checkout Now'));
+    await tester.pump(const Duration(milliseconds: 400));
+    // The button turns into a "Processing" state before the order is placed.
+    expect(find.text('Processing...'), findsOneWidget);
+    expect(container.read(ordersProvider), isEmpty);
     await settle(tester);
 
     expect(find.text('Order Placed!'), findsOneWidget);
+    expect(find.text('Print / Save Receipt (PDF)'), findsOneWidget);
     expect(container.read(cartProvider), isEmpty);
     expect(container.read(ordersProvider), hasLength(1));
 
@@ -156,6 +161,7 @@ void main() {
     await settle(tester);
     expect(find.text('My Orders'), findsOneWidget);
     expect(find.text('Placed'), findsOneWidget);
+    expect(find.text('Receipt'), findsOneWidget);
     expect(find.textContaining('Size 9'), findsOneWidget);
   });
 
@@ -195,4 +201,56 @@ void main() {
     expect(find.text('Size (US)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('leaving checkout while processing does not place the order', (
+    tester,
+  ) async {
+    final container = await pumpApp(
+      tester,
+      prefs: {
+        'cart_v1':
+            '[{"shoeId":"1","size":9,"colorway":"Chicago Red","quantity":1}]',
+      },
+    );
+    await tester.tap(find.byIcon(Icons.shopping_bag_outlined));
+    await settle(tester);
+    await tester.tap(find.text('Checkout'));
+    await settle(tester);
+    await tester.tap(find.text('Checkout Now'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.pageBack();
+    await settle(tester);
+
+    expect(container.read(ordersProvider), isEmpty);
+    expect(container.read(cartProvider), hasLength(1));
+  });
+
+  testWidgets(
+    'small phone: checkout and confirmation lay out without overflow',
+    (tester) async {
+      await pumpApp(
+        tester,
+        size: const Size(360, 640),
+        prefs: {
+          'cart_v1':
+              '[{"shoeId":"1","size":9,"colorway":"Chicago Red","quantity":1},'
+              '{"shoeId":"3","size":8,"colorway":"Volt","quantity":2},'
+              '{"shoeId":"6","size":10,"colorway":"Blackout","quantity":1}]',
+        },
+      );
+      await tester.tap(find.byIcon(Icons.shopping_bag_outlined));
+      await settle(tester);
+      await tester.tap(find.text('Checkout'));
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+
+      await tester.scrollUntilVisible(find.text('Checkout Now'), 200);
+      await tester.tap(find.text('Checkout Now'));
+      await settle(tester);
+      await settle(tester);
+      expect(find.text('Order Placed!'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

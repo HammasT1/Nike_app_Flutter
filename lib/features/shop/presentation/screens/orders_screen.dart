@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/home_tab_provider.dart';
 import '../../application/orders_provider.dart';
+import '../../domain/formatters.dart';
 import '../../domain/models/order.dart';
+import '../widgets/receipt_actions.dart';
 
 class OrdersPage extends ConsumerStatefulWidget {
   const OrdersPage({super.key});
@@ -91,27 +93,6 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
   }
 }
 
-String _formatDate(DateTime d) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
-  final minute = d.minute.toString().padLeft(2, '0');
-  final period = d.hour < 12 ? 'AM' : 'PM';
-  return '${months[d.month - 1]} ${d.day}, ${d.year} · $hour:$minute $period';
-}
-
 class _OrderCard extends StatelessWidget {
   final Order order;
   final DateTime now;
@@ -153,7 +134,7 @@ class _OrderCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '${_formatDate(order.placedAt)} · ${order.paymentMethod}',
+            '${formatOrderDate(order.placedAt)} · ${order.paymentMethod}',
             style: const TextStyle(color: Colors.black54, fontSize: 12.5),
           ),
           const SizedBox(height: 14),
@@ -200,6 +181,10 @@ class _OrderCard extends StatelessWidget {
                 ],
               ),
             ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ReceiptButton(order: order, compact: true),
+          ),
         ],
       ),
     );

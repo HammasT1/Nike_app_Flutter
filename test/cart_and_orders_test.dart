@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nike_flutter/features/shop/application/cart_provider.dart';
 import 'package:nike_flutter/features/shop/application/orders_provider.dart';
 import 'package:nike_flutter/features/shop/application/preferences_provider.dart';
+import 'package:nike_flutter/features/shop/application/receipt_pdf.dart';
+import 'package:nike_flutter/features/shop/domain/models/cart_item.dart';
 import 'package:nike_flutter/features/shop/application/shop_filter_provider.dart';
 import 'package:nike_flutter/features/shop/application/wishlist_provider.dart';
 import 'package:nike_flutter/features/shop/data/shoes_data.dart';
@@ -213,6 +215,54 @@ void main() {
       final before = kShoes.map((s) => s.id).toList();
       applyShoeFilter(kShoes, const ShoeFilter(sort: ShoeSort.priceHigh));
       expect(kShoes.map((s) => s.id).toList(), before);
+    });
+  });
+
+  group('receipt pdf', () {
+    final order = Order(
+      id: 'NKTEST1',
+      paymentMethod: 'Apple Pay',
+      placedAt: DateTime(2026, 11, 6, 19, 10),
+      items: [
+        CartItem(
+          shoe: kShoes[0],
+          size: 9,
+          colorway: 'Chicago Red',
+          quantity: 2,
+        ),
+        CartItem(shoe: kShoes[2], size: 8, colorway: 'Volt'),
+      ],
+    );
+
+    testWidgets('is a valid PDF that lists every shoe and the total', (
+      tester,
+    ) async {
+      final bytes = (await tester.runAsync(
+        () => buildReceiptPdf(order, compress: false),
+      ))!;
+      final text = String.fromCharCodes(bytes);
+
+      // The PDF stores text word by word, e.g. [(Air)]TJ [(Jordan)]TJ.
+      bool has(String word) => text.contains('($word)');
+
+      expect(text.startsWith('%PDF-'), isTrue);
+      expect(has('#NKTEST1'), isTrue);
+      expect(has('Jordan'), isTrue);
+      expect(has('Max'), isTrue);
+      expect(has('Chicago'), isTrue);
+      expect(has('Volt'), isTrue);
+      expect(has('Apple'), isTrue);
+      expect(has('\$579.97'), isTrue); // 2 x 199.99 + 179.99
+    });
+
+    testWidgets('product photos are embedded but kept small', (tester) async {
+      final bytes = (await tester.runAsync(() => buildReceiptPdf(order)))!;
+      expect(bytes.length, greaterThan(5000)); // images are in there
+      expect(bytes.length, lessThan(2 * 1024 * 1024)); // and not huge
+    });
+
+    test('file name uses the order id', () {
+      expect(receiptFileName(order), 'Nike-Receipt-NKTEST1.pdf');
     });
   });
 }
