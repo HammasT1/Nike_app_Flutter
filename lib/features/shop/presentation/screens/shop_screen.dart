@@ -2,50 +2,48 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/shoes_data.dart';
-import '../../domain/models/cart_item.dart';
+import '../../application/cart_provider.dart';
+import '../../application/shop_filter_provider.dart';
 import '../../domain/models/shoe.dart';
+import '../navigation.dart';
 import '../widgets/animated_shoe_card.dart';
+import '../widgets/quick_add_sheet.dart';
 import 'cart_screen.dart';
-import 'shoe_detail_screen.dart';
 
-class NikeShopPage extends StatefulWidget {
+class NikeShopPage extends ConsumerStatefulWidget {
   const NikeShopPage({super.key});
 
   @override
-  State<NikeShopPage> createState() => _NikeShopPageState();
+  ConsumerState<NikeShopPage> createState() => _NikeShopPageState();
 }
 
-class _NikeShopPageState extends State<NikeShopPage>
+class _NikeShopPageState extends ConsumerState<NikeShopPage>
     with TickerProviderStateMixin {
   final PageController _pageController = PageController(viewportFraction: 0.84);
-  final List<CartItem> _cart = [];
+  final TextEditingController _searchController = TextEditingController();
   final GlobalKey _cartIconKey = GlobalKey();
-  final List<GlobalKey> _shoeImageKeys = List<GlobalKey>.generate(
-    kShoes.length,
-    (_) => GlobalKey(),
-  );
+  final Map<String, GlobalKey> _shoeImageKeys = {};
   int _current = 0;
+
+  GlobalKey _imageKeyFor(Shoe shoe) =>
+      _shoeImageKeys.putIfAbsent(shoe.id, GlobalKey.new);
 
   @override
   void dispose() {
     _pageController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
-  void _insertIntoCart(Shoe shoe, {int qty = 1}) {
-    final index = _cart.indexWhere((e) => e.shoe.id == shoe.id);
-    if (index >= 0) {
-      _cart[index].quantity += qty;
-    } else {
-      _cart.add(CartItem(shoe: shoe, quantity: qty));
-    }
-    setState(() {});
+  /// Any change to the visible list sends the carousel back to the first shoe.
+  void _resetCarousel() {
+    _current = 0;
+    if (_pageController.hasClients) _pageController.jumpToPage(0);
   }
 
-  void _addToCart(Shoe shoe, {int qty = 1}) {
-    _insertIntoCart(shoe, qty: qty);
+  void _showAddedSnack(Shoe shoe) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         duration: const Duration(milliseconds: 900),
@@ -55,13 +53,26 @@ class _NikeShopPageState extends State<NikeShopPage>
     );
   }
 
-  Future<void> _animateAddToCart(Shoe shoe, {int qty = 1}) async {
-    final sourceContext = _shoeImageKeys[_current].currentContext;
+  Future<void> _quickAdd(Shoe shoe) async {
+    final selection = await showQuickAddSheet(context, shoe);
+    if (selection == null || !mounted) return;
+    await _animateAddToCart(shoe, selection);
+  }
+
+  Future<void> _animateAddToCart(Shoe shoe, QuickAddSelection selection) async {
+    void commit() {
+      ref
+          .read(cartProvider.notifier)
+          .add(shoe, size: selection.size, colorway: selection.colorway.name);
+      _showAddedSnack(shoe);
+    }
+
+    final sourceContext = _imageKeyFor(shoe).currentContext;
     final targetContext = _cartIconKey.currentContext;
     final overlay = Overlay.of(context);
 
     if (sourceContext == null || targetContext == null) {
-      _addToCart(shoe, qty: qty);
+      commit();
       return;
     }
 
@@ -122,7 +133,7 @@ class _NikeShopPageState extends State<NikeShopPage>
                               borderRadius: BorderRadius.circular(18),
                               boxShadow: [
                                 BoxShadow(
-                                  color: shoe.accent.withOpacity(0.35),
+                                  color: shoe.accent.withValues(alpha: 0.35),
                                   blurRadius: 18,
                                 ),
                               ],
@@ -150,19 +161,224 @@ class _NikeShopPageState extends State<NikeShopPage>
     entry.remove();
     controller.dispose();
 
-    _insertIntoCart(shoe, qty: qty);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(milliseconds: 900),
-        backgroundColor: Colors.black,
-        content: Text('${shoe.name} added to cart'),
+    if (mounted) commit();
+  }
+
+  Widget _buildCartAction(int cartLines) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 14, top: 10, bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CartPage()),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Padding(
+              key: _cartIconKey,
+              padding: const EdgeInsets.all(8.0),
+              child: const Icon(
+                Icons.shopping_bag_outlined,
+                color: Colors.black,
+                size: 28,
+              ),
+            ),
+            if (cartLines > 0)
+              Positioned(
+                right: -2,
+                top: -2,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(cartLines),
+                  tween: Tween(begin: 0.75, end: 1),
+                  duration: const Duration(milliseconds: 280),
+                  builder: (context, value, child) {
+                    return Transform.scale(scale: value, child: child);
+                  },
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$cartLines',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchAndFilters(ShoeFilter filter) {
+    final notifier = ref.read(shoeFilterProvider.notifier);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) {
+                    notifier.setQuery(value);
+                    _resetCarousel();
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search shoes',
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.8),
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: filter.query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _searchController.clear();
+                              notifier.setQuery('');
+                              _resetCarousel();
+                            },
+                          ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              PopupMenuButton<ShoeSort>(
+                tooltip: 'Sort',
+                initialValue: filter.sort,
+                onSelected: (sort) {
+                  notifier.setSort(sort);
+                  _resetCarousel();
+                },
+                itemBuilder: (_) => [
+                  for (final sort in ShoeSort.values)
+                    PopupMenuItem(value: sort, child: Text(sort.label)),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: filter.sort == ShoeSort.featured
+                        ? Colors.white.withValues(alpha: 0.8)
+                        : Colors.black,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.swap_vert,
+                    color: filter.sort == ShoeSort.featured
+                        ? Colors.black
+                        : Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _categoryChip('All', filter.category == null, () {
+                  notifier.setCategory(null);
+                  _resetCarousel();
+                }),
+                for (final category in ShoeCategory.values)
+                  _categoryChip(
+                    category.label,
+                    filter.category == category,
+                    () {
+                      notifier.setCategory(category);
+                      _resetCarousel();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryChip(String label, bool selected, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        selectedColor: Colors.black,
+        backgroundColor: Colors.white.withValues(alpha: 0.8),
+        side: BorderSide.none,
+        labelStyle: TextStyle(
+          color: selected ? Colors.white : Colors.black,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off, size: 60, color: Colors.black38),
+            const SizedBox(height: 12),
+            const Text(
+              'No shoes found',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Try a different search or category.',
+              style: TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: () {
+                _searchController.clear();
+                ref.read(shoeFilterProvider.notifier).reset();
+                _resetCarousel();
+              },
+              child: const Text('Clear filters'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final shoe = kShoes[_current];
+    final filter = ref.watch(shoeFilterProvider);
+    final shoes = ref.watch(filteredShoesProvider);
+    final cartLines = ref.watch(cartProvider.select((c) => c.length));
+
+    if (_current >= shoes.length) _current = 0;
+    final shoe = shoes.isEmpty ? null : shoes[_current];
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -177,179 +393,61 @@ class _NikeShopPageState extends State<NikeShopPage>
             fontSize: 28,
           ),
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14, top: 10, bottom: 10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CartPage(
-                      cart: _cart,
-                      onCartChanged: () => setState(() {}),
-                    ),
-                  ),
-                );
-                setState(() {});
-              },
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Padding(
-                    key: _cartIconKey,
-                    padding: EdgeInsets.all(8.0),
-                    child: Icon(
-                      Icons.shopping_bag_outlined,
-                      color: Colors.black,
-                      size: 28,
-                    ),
-                  ),
-                  if (_cart.isNotEmpty)
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0.75, end: 1),
-                        duration: const Duration(milliseconds: 280),
-                        builder: (context, value, child) {
-                          return Transform.scale(scale: value, child: child);
-                        },
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '${_cart.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        actions: [_buildCartAction(cartLines)],
       ),
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 550),
         curve: Curves.easeInOutCubic,
-        color: shoe.bg,
+        color: shoe?.bg ?? const Color(0xFFF4F4F4),
         child: SafeArea(
           child: Column(
             children: [
-              const SizedBox(height: 12),
+              const SizedBox(height: kToolbarHeight),
+              _buildSearchAndFilters(filter),
               Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: kShoes.length,
-                  onPageChanged: (value) => setState(() => _current = value),
-                  itemBuilder: (context, index) {
-                    return AnimatedShoeCard(
-                      shoe: kShoes[index],
-                      selected: index == _current,
-                      imageKey: _shoeImageKeys[index],
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          PageRouteBuilder(
-                            transitionDuration: const Duration(
-                              milliseconds: 420,
-                            ),
-                            reverseTransitionDuration: const Duration(
-                              milliseconds: 300,
-                            ),
-                            pageBuilder: (_, __, ___) => ShoeDetailPage(
-                              shoe: kShoes[index],
-                              onAdd: _addToCart,
-                            ),
-                            transitionsBuilder: (_, animation, __, child) {
-                              final fade = CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOut,
-                              );
-                              final rotate = Tween<double>(begin: 0.05, end: 0)
-                                  .animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                    ),
-                                  );
-                              final scale = Tween<double>(begin: 0.96, end: 1)
-                                  .animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutBack,
-                                    ),
-                                  );
-                              final slide =
-                                  Tween<Offset>(
-                                    begin: const Offset(0.08, 0),
-                                    end: Offset.zero,
-                                  ).animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                    ),
-                                  );
-                              return FadeTransition(
-                                opacity: fade,
-                                child: SlideTransition(
-                                  position: slide,
-                                  child: RotationTransition(
-                                    turns: rotate,
-                                    child: ScaleTransition(
-                                      scale: scale,
-                                      child: child,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                        setState(() {});
-                      },
-                    );
-                  },
-                ),
+                child: shoes.isEmpty
+                    ? _buildEmptyState()
+                    : PageView.builder(
+                        controller: _pageController,
+                        itemCount: shoes.length,
+                        onPageChanged: (value) =>
+                            setState(() => _current = value),
+                        itemBuilder: (context, index) {
+                          final item = shoes[index];
+                          return AnimatedShoeCard(
+                            key: ValueKey(item.id),
+                            shoe: item,
+                            selected: index == _current,
+                            imageKey: _imageKeyFor(item),
+                            onTap: () => openShoeDetail(context, item),
+                          );
+                        },
+                      ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 22),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(kShoes.length, (i) {
-                        final active = i == _current;
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          margin: const EdgeInsets.symmetric(horizontal: 5),
-                          height: 10,
-                          width: active ? 30 : 10,
-                          decoration: BoxDecoration(
-                            color: active ? Colors.black : Colors.black26,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        );
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutBack,
-                      child: FilledButton.icon(
-                        onPressed: () => _animateAddToCart(shoe),
+              if (shoe != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(shoes.length, (i) {
+                          final active = i == _current;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            margin: const EdgeInsets.symmetric(horizontal: 5),
+                            height: 10,
+                            width: active ? 30 : 10,
+                            decoration: BoxDecoration(
+                              color: active ? Colors.black : Colors.black26,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: () => _quickAdd(shoe),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.black,
                           padding: const EdgeInsets.symmetric(
@@ -369,10 +467,9 @@ class _NikeShopPageState extends State<NikeShopPage>
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),

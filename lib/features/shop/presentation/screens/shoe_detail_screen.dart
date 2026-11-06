@@ -2,22 +2,25 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/cart_provider.dart';
 import '../../domain/models/cart_item.dart';
 import '../../domain/models/shoe.dart';
+import '../widgets/variant_selectors.dart';
+import '../widgets/wishlist_button.dart';
 import 'checkout_screen.dart';
 
-class ShoeDetailPage extends StatefulWidget {
+class ShoeDetailPage extends ConsumerStatefulWidget {
   final Shoe shoe;
-  final void Function(Shoe shoe, {int qty}) onAdd;
 
-  const ShoeDetailPage({super.key, required this.shoe, required this.onAdd});
+  const ShoeDetailPage({super.key, required this.shoe});
 
   @override
-  State<ShoeDetailPage> createState() => _ShoeDetailPageState();
+  ConsumerState<ShoeDetailPage> createState() => _ShoeDetailPageState();
 }
 
-class _ShoeDetailPageState extends State<ShoeDetailPage>
+class _ShoeDetailPageState extends ConsumerState<ShoeDetailPage>
     with TickerProviderStateMixin {
   final GlobalKey _detailShoeImageKey = GlobalKey();
   final GlobalKey _detailCartIconKey = GlobalKey();
@@ -33,6 +36,35 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
   )..repeat(reverse: true);
 
   int qty = 1;
+  int? _size;
+  bool _sizeError = false;
+  late ShoeColorway _colorway = widget.shoe.colorways.first;
+
+  /// Light tint of the chosen colorway, used for the page background.
+  Color get _tint =>
+      Color.alphaBlend(_colorway.color.withValues(alpha: 0.16), Colors.white);
+
+  /// Returns the chosen size, or flags the missing selection.
+  int? _requireSize() {
+    if (_size == null) {
+      setState(() => _sizeError = true);
+      return null;
+    }
+    return _size;
+  }
+
+  void _addToCart(int size) {
+    ref
+        .read(cartProvider.notifier)
+        .add(widget.shoe, size: size, colorway: _colorway.name, qty: qty);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 900),
+        backgroundColor: Colors.black,
+        content: Text('${widget.shoe.name} added to cart'),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -42,12 +74,15 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
   }
 
   Future<void> _animateAddToCartAndReturn() async {
+    final size = _requireSize();
+    if (size == null) return;
+
     final sourceContext = _detailShoeImageKey.currentContext;
     final targetContext = _detailCartIconKey.currentContext;
     final overlay = Overlay.of(context);
 
     if (sourceContext == null || targetContext == null) {
-      widget.onAdd(widget.shoe, qty: qty);
+      _addToCart(size);
       Navigator.pop(context);
       return;
     }
@@ -109,7 +144,9 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
                               borderRadius: BorderRadius.circular(18),
                               boxShadow: [
                                 BoxShadow(
-                                  color: widget.shoe.accent.withOpacity(0.35),
+                                  color: widget.shoe.accent.withValues(
+                                    alpha: 0.35,
+                                  ),
                                   blurRadius: 18,
                                 ),
                               ],
@@ -137,8 +174,8 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
     entry.remove();
     controller.dispose();
 
-    widget.onAdd(widget.shoe, qty: qty);
     if (mounted) {
+      _addToCart(size);
       Navigator.pop(context);
     }
   }
@@ -153,7 +190,7 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
         leading: Padding(
           padding: const EdgeInsets.all(8),
           child: Material(
-            color: Colors.black.withOpacity(0.15),
+            color: Colors.black.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -164,12 +201,20 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
         ),
         actions: [
           Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: WishlistButton(
+              shoeId: widget.shoe.id,
+              background: Colors.white.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Padding(
             padding: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
             child: Container(
               key: _detailCartIconKey,
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
@@ -182,7 +227,7 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
       ),
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 500),
-        color: widget.shoe.bg,
+        color: _tint,
         child: SafeArea(
           child: FadeTransition(
             opacity: CurvedAnimation(parent: _entry, curve: Curves.easeOut),
@@ -203,7 +248,7 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
                       key: _detailShoeImageKey,
                       child: Image.asset(
                         widget.shoe.imagePath,
-                        height: 280,
+                        height: 220,
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -232,85 +277,160 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
                         ),
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            widget.shoe.name,
-                            style: const TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            widget.shoe.description,
-                            style: TextStyle(
-                              color: Colors.black.withOpacity(0.65),
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Price',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                '\$${widget.shoe.price.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  color: widget.shoe.accent,
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Quantity',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.black12),
-                                ),
-                                child: Row(
-                                  children: [
-                                    IconButton(
-                                      onPressed: () {
-                                        if (qty > 1) setState(() => qty--);
-                                      },
-                                      icon: const Icon(Icons.remove),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.shoe.name,
+                                    style: const TextStyle(
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w900,
                                     ),
-                                    Text(
-                                      '$qty',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 17,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.shoe.category.label,
+                                    style: const TextStyle(
+                                      color: Colors.black45,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    widget.shoe.description,
+                                    style: TextStyle(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.65,
                                       ),
+                                      height: 1.4,
                                     ),
-                                    IconButton(
-                                      onPressed: () => setState(() => qty++),
-                                      icon: const Icon(Icons.add),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Price',
+                                        style: TextStyle(
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        '\$${widget.shoe.price.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          color: widget.shoe.accent,
+                                          fontSize: 30,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Color: ${_colorway.name}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ColorwaySelector(
+                                    shoe: widget.shoe,
+                                    selected: _colorway,
+                                    onSelected: (c) =>
+                                        setState(() => _colorway = c),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'Size (US)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      if (_sizeError)
+                                        const Flexible(
+                                          child: Text(
+                                            'Please select a size',
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.red,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizeSelector(
+                                    shoe: widget.shoe,
+                                    selected: _size,
+                                    onSelected: (s) => setState(() {
+                                      _size = s;
+                                      _sizeError = false;
+                                    }),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Quantity',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.black12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            IconButton(
+                                              onPressed: () {
+                                                if (qty > 1) {
+                                                  setState(() => qty--);
+                                                }
+                                              },
+                                              icon: const Icon(Icons.remove),
+                                            ),
+                                            Text(
+                                              '$qty',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 17,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              onPressed: () =>
+                                                  setState(() => qty++),
+                                              icon: const Icon(Icons.add),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 10),
                           Row(
                             children: [
                               Expanded(
@@ -337,13 +457,18 @@ class _ShoeDetailPageState extends State<ShoeDetailPage>
                               Expanded(
                                 child: OutlinedButton(
                                   onPressed: () {
+                                    final size = _requireSize();
+                                    if (size == null) return;
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => CheckoutPage(
+                                          fromCart: false,
                                           cartItems: [
                                             CartItem(
                                               shoe: widget.shoe,
+                                              size: size,
+                                              colorway: _colorway.name,
                                               quantity: qty,
                                             ),
                                           ],

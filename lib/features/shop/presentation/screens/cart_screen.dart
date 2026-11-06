@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../domain/models/cart_item.dart';
+import '../../application/cart_provider.dart';
 import 'checkout_screen.dart';
 
-class CartPage extends StatefulWidget {
-  final List<CartItem> cart;
-  final VoidCallback onCartChanged;
-
-  const CartPage({super.key, required this.cart, required this.onCartChanged});
+class CartPage extends ConsumerStatefulWidget {
+  const CartPage({super.key});
 
   @override
-  State<CartPage> createState() => _CartPageState();
+  ConsumerState<CartPage> createState() => _CartPageState();
 }
 
-class _CartPageState extends State<CartPage>
+class _CartPageState extends ConsumerState<CartPage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _checkoutPop = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 180),
   );
-
-  double get total => widget.cart.fold(0, (sum, e) => sum + e.total);
 
   @override
   void dispose() {
@@ -38,7 +34,8 @@ class _CartPageState extends State<CartPage>
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 460),
         reverseTransitionDuration: const Duration(milliseconds: 320),
-        pageBuilder: (_, __, ___) => CheckoutPage(cartItems: widget.cart),
+        pageBuilder: (_, __, ___) =>
+            CheckoutPage(cartItems: ref.read(cartProvider), fromCart: true),
         transitionsBuilder: (_, animation, __, child) {
           final fade = CurvedAnimation(
             parent: animation,
@@ -69,9 +66,13 @@ class _CartPageState extends State<CartPage>
 
   @override
   Widget build(BuildContext context) {
+    final cart = ref.watch(cartProvider);
+    final total = ref.watch(cartTotalProvider);
+    final notifier = ref.read(cartProvider.notifier);
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Cart')),
-      body: widget.cart.isEmpty
+      body: cart.isEmpty
           ? const Center(
               child: Text(
                 'Your cart is empty',
@@ -82,9 +83,9 @@ class _CartPageState extends State<CartPage>
               children: [
                 Expanded(
                   child: ListView.builder(
-                    itemCount: widget.cart.length,
+                    itemCount: cart.length,
                     itemBuilder: (context, index) {
-                      final item = widget.cart[index];
+                      final item = cart[index];
                       return ListTile(
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(10),
@@ -97,32 +98,25 @@ class _CartPageState extends State<CartPage>
                         ),
                         title: Text(item.shoe.name),
                         subtitle: Text(
+                          'Size ${item.size} · ${item.colorway}\n'
                           '\$${item.shoe.price.toStringAsFixed(2)} x ${item.quantity}',
                         ),
+                        isThreeLine: true,
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              onPressed: () {
-                                if (item.quantity > 1) {
-                                  setState(() => item.quantity--);
-                                  widget.onCartChanged();
-                                }
-                              },
+                              onPressed: item.quantity > 1
+                                  ? () => notifier.decrement(item.key)
+                                  : null,
                               icon: const Icon(Icons.remove_circle_outline),
                             ),
                             IconButton(
-                              onPressed: () {
-                                setState(() => item.quantity++);
-                                widget.onCartChanged();
-                              },
+                              onPressed: () => notifier.increment(item.key),
                               icon: const Icon(Icons.add_circle_outline),
                             ),
                             IconButton(
-                              onPressed: () {
-                                setState(() => widget.cart.removeAt(index));
-                                widget.onCartChanged();
-                              },
+                              onPressed: () => notifier.remove(item.key),
                               icon: const Icon(
                                 Icons.delete_outline,
                                 color: Colors.red,

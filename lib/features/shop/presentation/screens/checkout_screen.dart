@@ -1,17 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/cart_provider.dart';
+import '../../application/orders_provider.dart';
 import '../../domain/models/cart_item.dart';
+import 'order_confirmation_screen.dart';
 
-class CheckoutPage extends StatefulWidget {
+class CheckoutPage extends ConsumerStatefulWidget {
   final List<CartItem> cartItems;
 
-  const CheckoutPage({super.key, required this.cartItems});
+  /// True when checking out the whole cart (which is emptied on success);
+  /// false for a single-shoe "Buy Now" that leaves the cart alone.
+  final bool fromCart;
+
+  const CheckoutPage({
+    super.key,
+    required this.cartItems,
+    required this.fromCart,
+  });
 
   @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
+  ConsumerState<CheckoutPage> createState() => _CheckoutPageState();
 }
 
-class _CheckoutPageState extends State<CheckoutPage>
+class _CheckoutPageState extends ConsumerState<CheckoutPage>
     with SingleTickerProviderStateMixin {
   final List<String> _paymentMethods = const [
     'Cash on Delivery',
@@ -36,25 +48,19 @@ class _CheckoutPageState extends State<CheckoutPage>
   }
 
   void _placeOrder() {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Order Placed'),
-          content: Text(
-            'Payment: ${_paymentMethods[_selectedPaymentMethod]}\nTotal: \$${total.toStringAsFixed(2)}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
-              },
-              child: const Text('OK'),
-            ),
-          ],
+    if (widget.cartItems.isEmpty) return;
+
+    final order = ref
+        .read(ordersProvider.notifier)
+        .place(
+          items: widget.cartItems,
+          paymentMethod: _paymentMethods[_selectedPaymentMethod],
         );
-      },
+    if (widget.fromCart) ref.read(cartProvider.notifier).clear();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => OrderConfirmationPage(order: order)),
     );
   }
 
@@ -127,20 +133,25 @@ class _CheckoutPageState extends State<CheckoutPage>
                                   : Colors.black12,
                             ),
                           ),
-                          child: RadioListTile<int>(
-                            value: i,
-                            groupValue: _selectedPaymentMethod,
-                            title: Text(
-                              _paymentMethods[i],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                          // Own Material so the tile's ink isn't hidden by the
+                          // coloured container above it.
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: RadioListTile<int>(
+                              value: i,
+                              groupValue: _selectedPaymentMethod,
+                              title: Text(
+                                _paymentMethods[i],
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
+                              activeColor: Colors.black,
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setState(() => _selectedPaymentMethod = value);
+                              },
                             ),
-                            activeColor: Colors.black,
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setState(() => _selectedPaymentMethod = value);
-                            },
                           ),
                         ),
                       ),
@@ -180,7 +191,7 @@ class _CheckoutPageState extends State<CheckoutPage>
                             children: [
                               Flexible(
                                 child: Text(
-                                  '${item.shoe.name} x ${item.quantity}',
+                                  '${item.shoe.name} (Size ${item.size}, ${item.colorway}) x ${item.quantity}',
                                 ),
                               ),
                               Text('\$${item.total.toStringAsFixed(2)}'),

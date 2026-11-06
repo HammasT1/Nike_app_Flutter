@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/shoe.dart';
+import 'wishlist_button.dart';
 
 class AnimatedShoeCard extends StatefulWidget {
   final Shoe shoe;
@@ -146,69 +147,93 @@ class _AnimatedShoeCardState extends State<AnimatedShoeCard>
                       ),
                     ),
                     padding: const EdgeInsets.all(18),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Stack(
                       children: [
-                        TweenAnimationBuilder<double>(
-                          tween: Tween<double>(begin: 0.96, end: 1.0),
-                          duration: const Duration(milliseconds: 700),
-                          curve: Curves.easeOutBack,
-                          builder: (context, value, child) =>
-                              Transform.scale(scale: value, child: child),
-                          child: AnimatedBuilder(
-                            animation: _tapSpin,
-                            builder: (context, child) {
-                              final spin = Curves.easeInOutCubic.transform(
-                                _tapSpin.value,
-                              );
-                              final angle = spin * 2 * 3.141592653589793;
-                              final scale =
-                                  1 + (0.06 * (1 - (spin - 0.5).abs() * 2));
-                              return Transform.rotate(
-                                angle: angle,
-                                child: Transform.scale(
-                                  scale: scale,
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Hero(
-                              tag: 'shoe_${widget.shoe.id}',
-                              child: Container(
-                                key: widget.imageKey,
-                                child: Image.asset(
-                                  widget.shoe.imagePath,
-                                  height: 220,
-                                  fit: BoxFit.contain,
+                        Positioned.fill(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: TweenAnimationBuilder<double>(
+                                  tween: Tween<double>(begin: 0.96, end: 1.0),
+                                  duration: const Duration(milliseconds: 700),
+                                  curve: Curves.easeOutBack,
+                                  builder: (context, value, child) =>
+                                      Transform.scale(
+                                        scale: value,
+                                        child: child,
+                                      ),
+                                  child: AnimatedBuilder(
+                                    animation: _tapSpin,
+                                    builder: (context, child) {
+                                      final spin = Curves.easeInOutCubic
+                                          .transform(_tapSpin.value);
+                                      final angle =
+                                          spin * 2 * 3.141592653589793;
+                                      final scale =
+                                          1 +
+                                          (0.06 * (1 - (spin - 0.5).abs() * 2));
+                                      return Transform.rotate(
+                                        angle: angle,
+                                        child: Transform.scale(
+                                          scale: scale,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: Hero(
+                                      tag: 'shoe_${widget.shoe.id}',
+                                      child: Container(
+                                        key: widget.imageKey,
+                                        child: LayoutBuilder(
+                                          builder: (context, constraints) {
+                                            // Up to 220 tall, but shrinks on short
+                                            // screens instead of overflowing.
+                                            return Image.asset(
+                                              widget.shoe.imagePath,
+                                              height: constraints.maxHeight
+                                                  .clamp(80.0, 220.0),
+                                              fit: BoxFit.contain,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              Text(
+                                widget.shoe.name,
+                                style: const TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '\$${widget.shoe.price.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  color: widget.shoe.accent,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Tap to open',
+                                style: TextStyle(
+                                  color: Colors.black.withOpacity(0.55),
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          widget.shoe.name,
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '\$${widget.shoe.price.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: widget.shoe.accent,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Tap to open',
-                          style: TextStyle(
-                            color: Colors.black.withOpacity(0.55),
-                            fontStyle: FontStyle.italic,
-                          ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: WishlistButton(shoeId: widget.shoe.id),
                         ),
                       ],
                     ),

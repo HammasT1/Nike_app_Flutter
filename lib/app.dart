@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'features/shop/presentation/screens/shop_screen.dart';
+import 'features/shop/presentation/screens/home_shell.dart';
 
 class NikeApp extends StatelessWidget {
   const NikeApp({super.key});
@@ -14,7 +14,7 @@ class NikeApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
       ),
-      home: const NikeShopPage(),
+      home: const HomeShell(),
     );
   }
 }
